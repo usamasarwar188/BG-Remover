@@ -1,0 +1,562 @@
+import React, { useState, useRef, useEffect, useCallback } from "react";
+import axios from "axios";
+import {
+  AppBar,
+  Box,
+  Button,
+  Container,
+
+  Paper,
+  Slider,
+  Stack,
+  ToggleButton,
+  ToggleButtonGroup,
+  Toolbar,
+  Typography,
+  CircularProgress,
+} from "@mui/material";
+import {
+  Image as ImageIcon,
+  Palette as PaletteIcon,
+  Gradient as GradientIcon,
+  CloudUpload as CloudUploadIcon,
+  Download as DownloadIcon,
+} from "@mui/icons-material";
+import { ThemeProvider, createTheme } from "@mui/material/styles";
+import "./App.css";
+
+const theme = createTheme({
+  palette: {
+    mode: 'light',
+    primary: {
+      main: '#2563eb',
+      light: '#60a5fa',
+      dark: '#1d4ed8',
+    },
+    secondary: {
+      main: '#ec4899',
+      light: '#f472b6',
+      dark: '#db2777',
+    },
+    background: {
+      default: '#f8fafc',
+      paper: '#ffffff',
+    },
+  },
+  typography: {
+    fontFamily: '"Inter", "Roboto", "Helvetica", "Arial", sans-serif',
+    h6: {
+      fontWeight: 600,
+      fontSize: '1.1rem',
+    },
+  },
+  shape: {
+    borderRadius: 12,
+  },
+  components: {
+    MuiPaper: {
+      styleOverrides: {
+        root: {
+          backgroundImage: 'none',
+          boxShadow: '0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1)',
+        },
+      },
+    },
+    MuiButton: {
+      styleOverrides: {
+        root: {
+          textTransform: 'none',
+          fontWeight: 600,
+          borderRadius: 8,
+          padding: '8px 16px',
+        },
+      },
+    },
+    MuiToggleButton: {
+      styleOverrides: {
+        root: {
+          textTransform: 'none',
+          fontWeight: 500,
+        },
+      },
+    },
+  },
+});
+
+function App() {
+
+  const [bgImage, setBgImage] = useState(null);
+  const [bgColor, setBgColor] = useState("#ffffff");
+  const [bgType, setBgType] = useState("image"); // "image", "color", or "gradient"
+  const [opacity, setOpacity] = useState(255);
+  const [startColor, setStartColor] = useState("#ffffff");
+  const [endColor, setEndColor] = useState("#000000");
+  const [gradientDirection, setGradientDirection] = useState("horizontal");
+  const [processedImage, setProcessedImage] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [inputPreview, setInputPreview] = useState(null);
+  const [bgPreview, setBgPreview] = useState(null);
+  const resultRef = useRef(null);
+
+  const canvasRef = useRef(null);
+
+  const updateCanvas = useCallback((img) => {
+    const canvas = canvasRef.current;
+    if (!canvas || !img) return;
+
+    const ctx = canvas.getContext('2d');
+    canvas.width = img.width;
+    canvas.height = img.height;
+
+    // Clear canvas
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    if (bgType === 'color') {
+      // Draw solid color background
+      ctx.fillStyle = bgColor + hexToOpacity(opacity);
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+    } else if (bgType === 'gradient') {
+      // Create gradient
+      const gradient = gradientDirection === 'horizontal' ?
+        ctx.createLinearGradient(0, 0, canvas.width, 0) :
+        ctx.createLinearGradient(0, 0, 0, canvas.height);
+
+      gradient.addColorStop(0, startColor + hexToOpacity(opacity));
+      gradient.addColorStop(1, endColor + hexToOpacity(opacity));
+      
+      ctx.fillStyle = gradient;
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+    } else if (bgType === 'image' && bgImage) {
+      // Draw background image
+      const bgImg = new Image();
+      bgImg.onload = () => {
+        ctx.globalAlpha = opacity / 255;
+        ctx.drawImage(bgImg, 0, 0, canvas.width, canvas.height);
+        ctx.globalAlpha = 1;
+        ctx.drawImage(img, 0, 0);
+      };
+      bgImg.src = URL.createObjectURL(bgImage);
+      return;
+    }
+
+    // Draw the processed image on top
+    ctx.drawImage(img, 0, 0);
+  }, [bgType, bgColor, opacity, startColor, endColor, gradientDirection, bgImage]);
+
+  // Effect to update canvas when background parameters change
+  useEffect(() => {
+    if (processedImage) {
+      const img = new Image();
+      img.onload = () => updateCanvas(img);
+      img.src = processedImage;
+    }
+  }, [bgType, bgColor, opacity, startColor, endColor, gradientDirection, bgImage, processedImage, updateCanvas]);
+
+  const handleImageUpload = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    
+    setInputPreview(URL.createObjectURL(file));
+    
+    // Remove background immediately when image is uploaded
+    if (!file) return;
+
+    setLoading(true);
+    const formData = new FormData();
+    formData.append("input_image", file);
+
+    try {
+      const response = await axios.post(
+        "http://127.0.0.1:5000/remove-background",
+        formData,
+        {
+          responseType: "blob",
+        }
+      );
+
+      const imageUrl = URL.createObjectURL(response.data);
+      const img = new Image();
+      img.onload = () => {
+        setProcessedImage(imageUrl);
+        updateCanvas(img);
+        setLoading(false);
+      };
+      img.src = imageUrl;
+    } catch (error) {
+      console.error("Error removing background:", error);
+      setLoading(false);
+    }
+  };
+
+
+
+  const hexToOpacity = (opacity) => {
+    const hex = Math.round(opacity).toString(16);
+    return hex.length === 1 ? '0' + hex : hex;
+  };
+
+  return (
+    <ThemeProvider theme={theme}>
+      <Box sx={{ 
+        minHeight: '100vh',
+        bgcolor: 'background.default',
+      }}>
+        <AppBar 
+          position="static" 
+          color="transparent" 
+          elevation={0}
+          sx={{
+            borderBottom: '1px solid',
+            borderColor: 'divider',
+            backdropFilter: 'blur(8px)',
+            bgcolor: 'rgba(255, 255, 255, 0.9)',
+          }}
+        >
+          <Toolbar>
+            <Box
+              component="img"
+              src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiBzdHJva2U9IiMyNTYzZWIiIHN0cm9rZS13aWR0aD0iMiIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIj48cGF0aCBkPSJNMjEgMTZWOGE0IDQgMCAwIDAtNC00SDdhNCA0IDAgMCAwLTQgNHY4YTQgNCAwIDAgMCA0IDRoMTBhNCA0IDAgMCAwIDQtNHoiPjwvcGF0aD48Y2lyY2xlIGN4PSI4LjUiIGN5PSI4LjUiIHI9IjEuNSI+PC9jaXJjbGU+PHBvbHlsaW5lIHBvaW50cz0iMjEgMTUgMTYgMTAgNSAyMSI+PC9wb2x5bGluZT48L3N2Zz4="
+              sx={{ width: 32, height: 32, mr: 2 }}
+              alt="Logo"
+            />
+            <Typography 
+              variant="h6" 
+              component="div" 
+              sx={{ 
+                flexGrow: 1,
+                background: 'linear-gradient(45deg, #2563eb, #ec4899)',
+                WebkitBackgroundClip: 'text',
+                WebkitTextFillColor: 'transparent',
+                fontWeight: 700,
+              }}
+            >
+              Background Remover & Replacer
+            </Typography>
+          </Toolbar>
+        </AppBar>
+
+        <Container maxWidth="xl" sx={{ mt: 4, mb: 4 }}>
+        <Box sx={{
+          display: 'grid',
+          gridTemplateColumns: { xs: '1fr', lg: '5fr 4fr' },
+          gap: 3
+        }}>
+          <Box sx={{
+            display: 'grid',
+            gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' },
+            gap: 3,
+            height: 'fit-content'
+          }}>
+          <Paper 
+            elevation={0} 
+            sx={{ 
+              p: 3,
+              transition: 'all 0.2s ease-in-out',
+              '&:hover': {
+                boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1)',
+              },
+            }}>
+            <Typography variant="h6" gutterBottom>
+              Upload Image
+            </Typography>
+            <Box
+              sx={{
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                justifyContent: "center",
+                p: 3,
+                border: "2px dashed",
+                borderColor: "primary.light",
+                background: 'linear-gradient(45deg, rgba(37, 99, 235, 0.03), rgba(236, 72, 153, 0.03))',
+                borderRadius: 2,
+                cursor: "pointer",
+                bgcolor: "background.paper",
+                position: "relative",
+                height: 400,
+                "&:hover": {
+                  bgcolor: "action.hover",
+                },
+              }}
+              onClick={() => document.getElementById("input-image").click()}
+            >
+              {inputPreview ? (
+                <img
+                  src={inputPreview}
+                  alt="Input preview"
+                  style={{
+                    maxHeight: "100%",
+                    maxWidth: "100%",
+                    objectFit: "contain",
+                    borderRadius: 4
+                  }}
+                />
+              ) : (
+                <Box sx={{ textAlign: "center" }}>
+                  <Box sx={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    gap: 1,
+                  }}>
+                    <CloudUploadIcon 
+                      sx={{ 
+                        fontSize: 48,
+                        color: "primary.main",
+                        filter: 'drop-shadow(0 1px 2px rgb(0 0 0 / 0.1))',
+                      }} 
+                    />
+                    <Typography variant="body1" sx={{ fontWeight: 500 }}>
+                      Click to upload an image
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary">
+                      or drag and drop
+                    </Typography>
+                  </Box>
+              )}
+            </Box>
+            <input
+              id="input-image"
+              type="file"
+              accept="image/*"
+              onChange={handleImageUpload}
+              style={{ display: "none" }}
+            />
+          </Paper>
+
+          {processedImage && (
+            <Paper elevation={3} sx={{ p: 3 }} ref={resultRef}>
+              <Typography variant="h6" gutterBottom>
+                Result
+              </Typography>
+              <Box sx={{ width: "100%" }}>
+                <Box
+                  sx={{
+                    display: "flex",
+                    flexDirection: "column",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    height: 400,
+                    width: "100%",
+                    bgcolor: "background.paper",
+                    borderRadius: 2,
+                    border: "2px solid",
+                    borderColor: "primary.main",
+                    p: 3,
+                    mb: 2
+                  }}
+                >
+                  <canvas
+                    ref={canvasRef}
+                    style={{
+                      maxWidth: "100%",
+                      maxHeight: "100%",
+                      objectFit: "contain",
+                      borderRadius: 4,
+                      boxShadow: "0 4px 6px rgba(0,0,0,0.1)"
+                    }}
+                  />
+                </Box>
+                <Box sx={{ display: "flex", justifyContent: "center" }}>
+                  <Button
+                    variant="contained"
+                    startIcon={<DownloadIcon />}
+                    onClick={() => {
+                      if (canvasRef.current) {
+                        const link = document.createElement('a');
+                        link.download = 'processed-image.png';
+                        link.href = canvasRef.current.toDataURL('image/png');
+                        link.click();
+                      }
+                    }}
+                    disabled={!processedImage}
+                  >
+                    Download Image
+                  </Button>
+                </Box>
+              </Box>
+            </Paper>
+          )}
+          </Box>
+
+          <Paper 
+            elevation={0} 
+            sx={{ 
+              p: 3, 
+              height: 'fit-content',
+              transition: 'all 0.2s ease-in-out',
+              '&:hover': {
+                boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1)',
+              },
+            }}>
+            <Typography variant="h6" gutterBottom>
+              Choose Background
+            </Typography>
+            <Stack 
+              spacing={3} 
+              sx={{ 
+                maxHeight: { lg: 'calc(100vh - 180px)' }, 
+                overflowY: 'auto',
+                '::-webkit-scrollbar': {
+                  width: '8px',
+                },
+                '::-webkit-scrollbar-track': {
+                  background: 'transparent',
+                },
+                '::-webkit-scrollbar-thumb': {
+                  background: '#cbd5e1',
+                  borderRadius: '4px',
+                },
+                '::-webkit-scrollbar-thumb:hover': {
+                  background: '#94a3b8',
+                },
+              }}>
+              <ToggleButtonGroup
+                value={bgType}
+                exclusive
+                onChange={(e, newValue) => newValue && setBgType(newValue)}
+                fullWidth
+              >
+                <ToggleButton value="image">
+                  <ImageIcon sx={{ mr: 1 }} />
+                  Image
+                </ToggleButton>
+                <ToggleButton value="color">
+                  <PaletteIcon sx={{ mr: 1 }} />
+                  Color
+                </ToggleButton>
+                <ToggleButton value="gradient">
+                  <GradientIcon sx={{ mr: 1 }} />
+                  Gradient
+                </ToggleButton>
+              </ToggleButtonGroup>
+
+              <Box>
+                <Typography gutterBottom>
+                  Opacity: {Math.round((opacity / 255) * 100)}%
+                </Typography>
+                <Slider
+                  value={opacity}
+                  min={0}
+                  max={255}
+                  onChange={(e, newValue) => setOpacity(newValue)}
+                  valueLabelDisplay="auto"
+                  valueLabelFormat={(value) => `${Math.round((value / 255) * 100)}%`}
+                />
+              </Box>
+
+              {bgType === "image" ? (
+                <Box
+                  sx={{
+                    p: 2,
+                    border: "2px dashed",
+                    borderColor: "primary.main",
+                    borderRadius: 2,
+                    cursor: "pointer",
+                    bgcolor: "background.paper",
+                    height: 120,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    "&:hover": {
+                      bgcolor: "action.hover",
+                    },
+                  }}
+                  onClick={() => document.getElementById("bg-image").click()}
+                >
+                  {bgPreview ? (
+                    <img
+                      src={bgPreview}
+                      alt="Background preview"
+                      style={{ maxHeight: "100%", maxWidth: "100%", objectFit: "contain" }}
+                    />
+                  ) : (
+                    <Box sx={{ textAlign: "center" }}>
+                      <CloudUploadIcon sx={{ fontSize: 32, color: "primary.main" }} />
+                      <Typography variant="body2" sx={{ mt: 1 }}>
+                        Click to upload background image
+                      </Typography>
+                    </Box>
+                  )}
+                </Box>
+              ) : bgType === "gradient" ? (
+                <Stack spacing={2} sx={{ mt: 2 }}>
+                  <Box sx={{ display: "flex", alignItems: "center", gap: 2 }}>
+                    <Typography>Start Color:</Typography>
+                    <input
+                      type="color"
+                      value={startColor}
+                      onChange={(e) => setStartColor(e.target.value)}
+                      style={{ width: 50, height: 50 }}
+                    />
+                    <Typography variant="body2" color="text.secondary">
+                      {startColor}
+                    </Typography>
+                  </Box>
+                  <Box sx={{ display: "flex", alignItems: "center", gap: 2 }}>
+                    <Typography>End Color:</Typography>
+                    <input
+                      type="color"
+                      value={endColor}
+                      onChange={(e) => setEndColor(e.target.value)}
+                      style={{ width: 50, height: 50 }}
+                    />
+                    <Typography variant="body2" color="text.secondary">
+                      {endColor}
+                    </Typography>
+                  </Box>
+                  <Box sx={{ display: "flex", alignItems: "center", gap: 2 }}>
+                    <Typography>Direction:</Typography>
+                    <ToggleButtonGroup
+                      value={gradientDirection}
+                      exclusive
+                      onChange={(e, newValue) => newValue && setGradientDirection(newValue)}
+                      size="small"
+                    >
+                      <ToggleButton value="horizontal">Horizontal</ToggleButton>
+                      <ToggleButton value="vertical">Vertical</ToggleButton>
+                    </ToggleButtonGroup>
+                  </Box>
+                </Stack>
+              ) : (
+                <Box sx={{ display: "flex", alignItems: "center", gap: 2 }}>
+                  <Typography>Color:</Typography>
+                  <input
+                    type="color"
+                    value={bgColor}
+                    onChange={(e) => setBgColor(e.target.value)}
+                    style={{ width: 50, height: 50 }}
+                  />
+                  <Typography variant="body2" color="text.secondary">
+                    {bgColor}
+                  </Typography>
+                </Box>
+              )}
+            </Stack>
+          </Paper>
+
+          <input
+            id="bg-image"
+            type="file"
+            accept="image/*"
+            onChange={(e) => {
+              const file = e.target.files[0];
+              setBgImage(file);
+              setBgPreview(URL.createObjectURL(file));
+            }}
+            style={{ display: "none" }}
+          />
+
+          {loading && (
+            <Box sx={{ display: "flex", justifyContent: "center", my: 2 }}>
+              <CircularProgress />
+            </Box>
+          )}
+        </Box>
+      </Container>
+    </Box>
+    </ThemeProvider>
+  );
+}
+
+export default App;
